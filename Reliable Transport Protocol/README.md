@@ -1,4 +1,4 @@
-### Implementing a Reliable Transport Protocol
+# Implementing a Reliable Transport Protocol
 In this laboratory programming assignment, you will be writing the sending and receiving transport-level code for implementing a simple reliable data transfer protocol. There are two versions of this lab, the Alternating-Bit-Protocol version and the  Go-Back-N version. This lab should be fun since your implementation will differ very little from what would be required in a real-world situation.
 
 Since you probably don't have standalone machines (with an OS that you can modify), your code will have to execute in a simulated hardware/software environment. However, the programming interface provided to your routines, i.e., the code that would call your entities from above and from below is very close to what is done in an actual UNIX environment. (Indeed, the software interfaces described in this programming assignment are much more realistic that the infinite loop senders and receivers that many texts describe). Stopping/starting of timers are also simulated, and timer interrupts will cause your timer handling routine to be activated.
@@ -8,20 +8,24 @@ The procedures you will write are for the sending entity (A) and the receiving e
 
 The unit of data passed between the upper layers and your protocols is a message, which is declared as:
 
-```struct msg {
+```
+struct msg {
   char data[20];
-  };```
+};
+```
 
 This declaration, and all other data structure and emulator routines, as well as stub routines (i.e., those you are to complete) are in the file, prog2.c, described later. Your sending entity will thus receive data in 20-byte chunks from layer5; your receiving entity should deliver 20-byte chunks of correctly received data to layer5 at the receiving side.
 
 The unit of data passed between your routines and the network layer is the packet, which is declared as:
 
-```struct pkt {
+```
+struct pkt {
    int seqnum;
    int acknum;
    int checksum;
    char payload[20];
-    };```
+};
+```
 Your routines will fill in the payload field from the message data passed down from layer5. The other packet fields will be used by your protocols to insure reliable delivery, as we've seen in class.
 
 The routines you will write are detailed below. As noted above, such procedures in real-life would be part of the operating system, and would be called by other procedures in the operating system.
@@ -67,13 +71,13 @@ The medium is capable of corrupting and losing packets. It will not reorder pack
 * **Average time between messages from sender's layer5.** You can set this value to any non-zero, positive value. Note that the smaller the value you choose, the faster packets will be be arriving to your sender.
 
 
-## The Alternating-Bit-Protocol Version\
+## The Alternating-Bit-Protocol Version
 You are to write the procedures, A_output(),A_input(),A_timerinterrupt(),A_init(),B_input(), and B_init() which together will implement a stop-and-wait (i.e., the alternating bit protocol, which we referred to as rdt3.0 in the text) unidirectional transfer of data from the A-side to the B-side. Your protocol should use both ACK and NACK messages.
 
 You should choose a very large value for the average time between messages from sender's layer5, so that your sender is never called while it still has an outstanding, unacknowledged message it is trying to send to the receiver. I'd suggest you choose a value of 1000. You should also perform a check in your sender to make sure that when A_output() is called, there is no message currently in transit. If there is, you can simply ignore (drop) the data being passed to the A_output() routine.simply  copy the prog2.c file to whatever machine and OS you choose).
 
 
-## The Go-Back-N version of this lab.
+## The Go-Back-N Version
 You are to write the procedures, A_output(), A_input(), A_timerinterrupt(), A_init(), B_input(), and B_init() which together will implement a Go-Back-N unidirectional transfer of data from the A-side to the B-side, with a window size of 8. Your protocol should use both ACK and NACK messages. Consult the alternating-bit-protocol version of this lab above for information about how to obtain the network emulator.
 
 We would STRONGLY recommend that you first implement the easier lab (Alternating Bit) and then extend your code to implement the harder lab (Go-Back-N). Believe me - it will not be time wasted! However, some new considerations for your Go-Back-N code (which do not apply to the Alternating Bit protocol) are:
