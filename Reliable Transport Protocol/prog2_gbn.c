@@ -1,3 +1,5 @@
+#define _CRT_SECURE_NO_DEPRECATE
+
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -14,14 +16,18 @@ or lost, according to user-defined probabilities
 - packets will be delivered in the order in which they were sent
 (although some can be lost).
 **********************************************************************/
-
 #define BIDIRECTIONAL 0    /* change to 1 if you're doing extra credit */
-a/* and write a routine called B_output */
+/* and write a routine called B_output */
 
- /* a "msg" is the data unit passed from layer 5 (teachers code) to layer  */
- /* 4 (students' code).  It contains the data (characters) to be delivered */
- /* to layer 5 via the students transport level protocol entities.         */
-    struct msg {
+#define A 0
+#define B 1
+#define TIMEOUT 20.0
+#define GO_BK_N 8
+
+/* a "msg" is the data unit passed from layer 5 (teachers code) to layer  */
+/* 4 (students' code).  It contains the data (characters) to be delivered */
+/* to layer 5 via the students transport level protocol entities.         */
+struct msg {
     char data[20];
 };
 
@@ -35,38 +41,107 @@ struct pkt {
     char payload[20];
 };
 
+void init(void);
+float jimsrand(void);
+void generate_next_arrival(void);
+void insertevent(struct event *p);
+void printevlist(void);
+void stoptimer(int AorB /* A or B is trying to stop timer */);
+void starttimer(int AorB /* A or B is trying to stop timer */, float increment);
+void tolayer3(int AorB /* A or B is trying to stop timer */, struct pkt packet);
+void tolayer5(int AorB, char datasent[20]);
+
 /********* STUDENTS WRITE THE NEXT SEVEN ROUTINES *********/
+// Globals
+struct pkt *prev_packets[32] = { NULL };
+int buffer_idx;
+int base;
 
-
-
+int seq_A, recv_seq_A;
+int seq_B;
 
 /* called from layer 5, passed the data to be sent to other side */
 void A_output(struct msg message)
 {
+    if (prev_packets[buffer_idx] == NULL) {
+        struct pkt *packet = malloc(sizeof(struct pkt));
+        memcpy(packet->payload, message.data, 20);
+        packet->seqnum = seq_A;
+        packet->checksum = compute_checksum(packet);
 
+        prev_packets[buffer_idx] = packet;
+        buffer_idx++;
+
+        if (seq_A == GO_BK_N) {
+            starttimer(A, TIMEOUT);
+        }
+
+        if (seq_A < (base + GO_BK_N)) {
+            printf("A_output: send packet %d\n", seq_A);
+            tolayer3(A, *packet);
+            seq_A++;
+        }
+        else {
+            if (base > 0) {
+                stoptimer(A);
+            }
+
+            starttimer(A, TIMEOUT);
+        }
+
+        // Increment buffer index to next slot
+        if (buffer_idx == 32) {
+            buffer_idx = 0;
+        }
+    }
+    else {
+        printf("A_output: buffer full, dropping message\n");
+    }
 }
 
 void B_output(struct msg message)  /* need be completed only for extra credit */
 {
-
 }
 
 /* called from layer 3, when a packet arrives for layer 4 */
-void A_input(struck pkt packet)
+void A_input(struct pkt packet)
 {
+    if (packet.checksum != compute_checksum(&packet)) {
+        printf("A_input: packet corruption detected, dropping packet.\n");
+        return;
+    }
 
+    if (packet.acknum != recv_seq_A) {
+        printf("A_input: unexpected ACK%d number.\n", packet.acknum);
+        return;
+    }
+    else {
+        printf("A_input: received ACK%d\n", packet.acknum);
+        free(prev_packets[recv_seq_A % 32]);
+        prev_packets[recv_seq_A % 32] = NULL;
+        recv_seq_A++;
+        base++;
+    }
 }
 
 /* called when A's timer goes off */
 void A_timerinterrupt(void)
 {
+    for (int i = recv_seq_A; i < seq_A; i++) {
+        printf("A_timerinterrupt: resending packet %d\n", i);
+        tolayer3(A, *prev_packets[i]);
+    }
 
+    starttimer(A, TIMEOUT);
 }
 
 /* the following routine will be called once (only) before any other */
 /* entity A routines are called. You can use it to do any initialization */
 void A_init(void)
 {
+    seq_A = 0;
+    buffer_idx = 0;
+    base = 0;
 }
 
 
@@ -75,6 +150,25 @@ void A_init(void)
 /* called from layer 3, when a packet arrives for layer 4 at B*/
 void B_input(struct pkt packet)
 {
+    if (packet.checksum != compute_checksum(&packet)) {
+        printf("B_input: packet corruption detected.\n");
+        packet.acknum = seq_B - 1;
+    }
+    else if (packet.seqnum > seq_B) {
+        printf("B_input: unexpected sequence number %d\n", packet.seqnum);
+        packet.acknum = seq_B - 1;
+    }
+    else {
+        printf("B_input: received message: %.20s\n", packet.payload);
+        tolayer5(B, packet.payload);
+
+        packet.acknum = packet.seqnum;
+        seq_B = packet.seqnum + 1;
+    }
+
+    packet.checksum = compute_checksum(&packet);
+    printf("B_input: sent ACK%d\n", packet.acknum);
+    tolayer3(B, packet);
 }
 
 /* called when B's timer goes off */
@@ -86,6 +180,20 @@ void B_timerinterrupt(void)
 /* entity B routines are called. You can use it to do any initialization */
 void B_init(void)
 {
+    seq_B = 0;
+}
+
+/* Compute a checksum */
+int compute_checksum(struct pkt *packet)
+{
+    int sum = 0;
+    sum += packet->seqnum;
+    sum += packet->acknum;
+    for (int i = 0; i < 20; i++) {
+        sum += packet->payload[i];
+    }
+
+    return sum;
 }
 
 
@@ -122,8 +230,6 @@ struct event *evlist = NULL;   /* the event list */
 
 #define  OFF             0
 #define  ON              1
-#define   A    0
-#define   B    1
 
 
 int TRACE = 1;             /* for my debugging */
@@ -250,7 +356,7 @@ void init(void)
         printf("It is likely that random number generation on your machine\n");
         printf("is different from what this emulator expects.  Please take\n");
         printf("a look at the routine jimsrand() in the emulator code. Sorry. \n");
-        exit();
+        exit(0);
     }
 
     ntolayer3 = 0;
@@ -268,7 +374,7 @@ void init(void)
 /****************************************************************************/
 float jimsrand(void)
 {
-    double mmm = 2147483647;   /* largest int  - MACHINE DEPENDENT!!!!!!!!   */
+    double mmm = RAND_MAX;   /* largest int  - MACHINE DEPENDENT!!!!!!!!   */
     float x;                   /* individual students may need to change mmm */
     x = rand() / mmm;            /* x should be uniform in [0,1] */
     return(x);
@@ -289,7 +395,7 @@ void generate_next_arrival(void)
     if (TRACE > 2)
         printf("          GENERATE NEXT ARRIVAL: creating new arrival\n");
 
-    x = lambda * jimsrand() * 2;  /* x is uniform on [0,2*lambda] */
+    x = lambda * jimsrand() * 4;  /* x is uniform on [0,2*lambda] */
                                   /* having mean of lambda        */
     evptr = (struct event *)malloc(sizeof(struct event));
     evptr->evtime = time + x;
@@ -356,7 +462,7 @@ void printevlist(void)
 /********************** Student-callable ROUTINES ***********************/
 
 /* called by students routine to cancel a previously-started timer */
-stoptimer(int AorB /* A or B is trying to stop timer */)
+void stoptimer(int AorB /* A or B is trying to stop timer */)
 {
     struct event *q, *qold;
 
@@ -386,7 +492,7 @@ stoptimer(int AorB /* A or B is trying to stop timer */)
 }
 
 
-starttimer(int AorB /* A or B is trying to stop timer */, float increment)
+void starttimer(int AorB /* A or B is trying to stop timer */, float increment)
 {
     struct event *q;
     struct event *evptr;
@@ -414,7 +520,7 @@ starttimer(int AorB /* A or B is trying to stop timer */, float increment)
 
 
 /************************** TOLAYER3 ***************/
-tolayer3(int AorB /* A or B is trying to stop timer */, struct pkt packet)
+void tolayer3(int AorB /* A or B is trying to stop timer */, struct pkt packet)
 {
     struct pkt *mypktptr;
     struct event *evptr, *q;
@@ -488,7 +594,7 @@ tolayer3(int AorB /* A or B is trying to stop timer */, struct pkt packet)
     insertevent(evptr);
 }
 
-tolayer5(int AorB, char datasent[20])
+void tolayer5(int AorB, char datasent[20])
 {
     int i;
     if (TRACE > 2) {
